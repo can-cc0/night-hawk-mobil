@@ -29,7 +29,20 @@ public class FiringController : MonoBehaviour {
     public ParticleSystem muzzleFlash;
     public GameObject bloodEffect;
 
+    /// <summary>
+    /// Dokunmatik denge. Masaustu ayarlarinda oyuncunun menzili 35 m, askerin
+    /// menzili 100 m: rakip goremedigin yerden vuruyordu. Ayrica parmakla nisan
+    /// almak fareye gore cok daha yavas oldugu icin mermi basina hasar artiyor
+    /// (asker cani 20 -> 4 isabet yerine 3).
+    /// </summary>
+    private void MobilDenge() {
+        if (!Application.isMobilePlatform) return;
+        damage = 8f;
+        fireRange = 60f;
+    }
+
     private void Start() {
+        MobilDenge();
         inputManager = GetComponent<InputManager>();
         playerMovement = GetComponent<PlayerMovement>();
         playerUIManager = GetComponent<PlayerUIManager>();
