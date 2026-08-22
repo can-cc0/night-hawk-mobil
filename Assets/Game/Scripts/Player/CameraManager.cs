@@ -36,13 +36,15 @@ public class CameraManager : MonoBehaviour {
 
         playerTransform = FindFirstObjectByType<PlayerManager>().transform;
         inputManager = FindFirstObjectByType<InputManager>();
+        playerMovement = FindFirstObjectByType<PlayerMovement>();   // bir kez
         defaultPivotLocalPosition = cameraPivot.localPosition;
 
         lookAngle = transform.rotation.eulerAngles.y;
     }
 
     void Update() {
-        playerMovement = FindFirstObjectByType<PlayerMovement>();
+        // Mobil: her karede tum sahneyi taramak pahaliydi, Awake'e alindi.
+        if (playerMovement == null) playerMovement = FindFirstObjectByType<PlayerMovement>();
     }
 
     public void HandleAllCameraMovement() {
