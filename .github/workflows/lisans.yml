@@ -1,0 +1,55 @@
+name: Unity lisansi uret
+
+on:
+  workflow_dispatch:
+
+jobs:
+  lisans:
+    name: ulf uret ve gizli anahtara yaz
+    runs-on: ubuntu-latest
+    container:
+      image: unityci/editor:ubuntu-6000.0.40f1-android-3
+    steps:
+      - name: Lisansi hesapla etkinlestir
+        env:
+          E: ${{ secrets.UNITY_EMAIL }}
+          P: ${{ secrets.UNITY_PASSWORD }}
+        run: |
+          set +e
+          CLI=$(find / -name "Unity.Licensing.Client" -type f 2>/dev/null | head -1)
+          echo "lisans istemcisi: $CLI"
+          [ -z "$CLI" ] && { echo "ISTEMCI BULUNAMADI"; find / -iname "*Licensing*" -maxdepth 6 2>/dev/null | head; exit 1; }
+          "$CLI" --activate-ulf --username "$E" --password "$P" 2>&1 | sed -E 's/(password|--password)[^ ]*/\1 ***/g'
+          echo "--- uretilen lisanslar ---"
+          find / -name "Unity_lic.ulf" -o -name "*.ulf" 2>/dev/null | head
+
+      - name: Araclari kur
+        run: |
+          apt-get update -qq && apt-get install -y -qq curl python3 python3-pip >/dev/null 2>&1
+          pip3 install pynacl --quiet --break-system-packages 2>/dev/null || pip3 install pynacl --quiet
+
+      - name: ulf dosyasini gizli anahtar olarak kaydet
+        env:
+          TOK: ${{ secrets.GH_PAT }}
+          REPO: ${{ github.repository }}
+        run: |
+          ULF=$(find / -name "*.ulf" 2>/dev/null | head -1)
+          if [ -z "$ULF" ]; then echo "ULF BULUNAMADI - lisans alinamadi"; exit 1; fi
+          echo "bulunan lisans: $ULF ($(stat -c%s "$ULF") bayt)"
+          python3 - "$ULF" <<'PYEOF'
+          import json, base64, sys, os, urllib.request
+          from nacl import encoding, public
+          ulf = open(sys.argv[1]).read()
+          tok = os.environ["TOK"]; repo = os.environ["REPO"]
+          req = urllib.request.Request(f"https://api.github.com/repos/{repo}/actions/secrets/public-key",
+              headers={"Authorization": f"Bearer {tok}", "Accept": "application/vnd.github+json"})
+          pk = json.loads(urllib.request.urlopen(req, timeout=60).read())
+          pub = public.PublicKey(pk["key"].encode(), encoding.Base64Encoder())
+          enc = base64.b64encode(public.SealedBox(pub).encrypt(ulf.encode())).decode()
+          body = json.dumps({"encrypted_value": enc, "key_id": pk["key_id"]}).encode()
+          r = urllib.request.Request(f"https://api.github.com/repos/{repo}/actions/secrets/UNITY_LICENSE",
+              headers={"Authorization": f"Bearer {tok}", "Accept": "application/vnd.github+json"},
+              method="PUT", data=body)
+          urllib.request.urlopen(r, timeout=60)
+          print("UNITY_LICENSE gizli anahtari yazildi (%d bayt)" % len(ulf))
+          PYEOF
