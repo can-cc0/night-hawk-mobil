@@ -82,7 +82,22 @@ public class Soldier : MonoBehaviour {
     public Transform gunSmokePoint;
     public GameObject bloodEffect;
 
+    /// <summary>
+    /// Dokunmatikte nisan almak fareye gore cok daha yavas. Masaustu ayarlariyla
+    /// (25 hasar, %90 isabet, 100 m menzil) oyuncu 4 vurusta oluyor ve donmeye
+    /// firsat bulamiyor. Degerler prefab'ta tutuldugu icin betik varsayilanini
+    /// degistirmek yetmiyor; burada, her asker olusurken uygulaniyor.
+    /// </summary>
+    private void MobilDenge() {
+        if (!Application.isMobilePlatform) return;
+        damage = 12;                 // 100 can -> 8 vurusluk pay
+        maxAccuracy = 0.62f;
+        minAccuracy = 0.20f;
+        shootingRange = 60f;
+    }
+
     private void Start() {
+        MobilDenge();
         currentMovingSpeed = walkingSpeed;
         currentHealth = characterHealth;
         playerBody = GameObject.FindGameObjectWithTag("Player");
@@ -401,7 +416,6 @@ public class Soldier : MonoBehaviour {
             }
             finalAccuracy = Mathf.Clamp(finalAccuracy, minAccuracy, maxAccuracy);
 
-            Debug.Log("Final Accuracy: " + finalAccuracy); // Debug log for accuracy
 
             // Determine if shot hits based on accuracy
             if (Random.value <= finalAccuracy) {
