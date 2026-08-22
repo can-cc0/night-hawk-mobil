@@ -56,8 +56,7 @@ public class MobilKontrol : MonoBehaviour
     {
         Basili,    // parmak durdukca true, kalkinca false
         Tekil,     // basisa bir kez true; temizlemesi oyunun isi
-        Anahtar,   // basinca acilir, tekrar basinca kapanir
-        Cagri      // bayrak degil, dogrudan bir islev cagirir
+        Anahtar    // basinca acilir, tekrar basinca kapanir
     }
 
     class Dugme
@@ -67,7 +66,6 @@ public class MobilKontrol : MonoBehaviour
         public Vector2 Kose, Kaydir;
         public float Yaricap;
         public Color Renk;
-        public System.Action Islev;
 
         public RectTransform Gorsel;
         public Image Zemin, Simge;
@@ -167,7 +165,6 @@ public class MobilKontrol : MonoBehaviour
         {
             _girdi = InputManager.instance;
             if (_girdi == null) return;
-            OyuncuyaEkle();
         }
 
         // Duraklatma menusu acikken kontroller cekilsin, menuye dokunmayi yemesin.
@@ -178,13 +175,6 @@ public class MobilKontrol : MonoBehaviour
         DokunuslariOku();
         DugmeleriIsle();
         YazHareket(_yon, _bakisDelta * (BAKIS_BIRIMI / Mathf.Max(1f, Screen.height)));
-    }
-
-    /// <summary>Ziplama/tirmanma oyunda yok; oyuncuya bir kez ekleniyor.</summary>
-    void OyuncuyaEkle()
-    {
-        if (_girdi.GetComponent<ZiplamaTirmanma>() == null)
-            _girdi.gameObject.AddComponent<ZiplamaTirmanma>();
     }
 
     void DokunuslariOku()
@@ -258,9 +248,6 @@ public class MobilKontrol : MonoBehaviour
     void YazHareket(Vector2 hareket, Vector2 bakis)
     {
         if (_girdi == null) return;
-        var tt = ZiplamaTirmanma.Etkin;
-        if (tt != null && tt.Tirmaniyor) hareket = Vector2.zero;
-
         _girdi.movementInput = hareket;
         if (_alanKamera != null) _alanKamera.SetValue(_girdi, bakis);
     }
@@ -286,10 +273,6 @@ public class MobilKontrol : MonoBehaviour
                 case Tur.Anahtar:                      // bas-ac, tekrar bas-kapat
                     if (indi) d.AnahtarAcik = !d.AnahtarAcik;
                     Yaz(d.Alan, d.AnahtarAcik);
-                    break;
-
-                case Tur.Cagri:                        // bayrak degil, islev
-                    if (indi && d.Islev != null) d.Islev();
                     break;
             }
 
@@ -383,11 +366,7 @@ public class MobilKontrol : MonoBehaviour
 
         Ekle("ates",    "fireInput",         Tur.Basili,  sag, new Vector2(-205f, 205f), 118f, new Color(1f, .40f, .30f));
         Ekle("nisan",   "scopeInput",        Tur.Anahtar, sag, new Vector2(-440f, 155f),  84f, new Color(.50f, .78f, 1f));
-        Ekle("zipla",   null,                Tur.Cagri,   sag, new Vector2(-170f, 468f),  84f, new Color(.62f, 1f, .70f),
-             () => { if (ZiplamaTirmanma.Etkin != null) ZiplamaTirmanma.Etkin.Zipla(); });
         Ekle("comel",   "crouchInput",       Tur.Tekil,   sag, new Vector2(-398f, 382f),  76f, new Color(.72f, 1f, .78f));
-        Ekle("tirman",  null,                Tur.Cagri,   sag, new Vector2(-152f, 700f),  74f, new Color(.90f, 1f, .60f),
-             () => { if (ZiplamaTirmanma.Etkin != null) ZiplamaTirmanma.Etkin.Tirman(1.25f); });
         Ekle("sarjor",  "reloadInput",       Tur.Basili,  sag, new Vector2(-612f, 252f),  70f, new Color(1f, .84f, .42f));
         Ekle("silah",   "switchWeaponInput", Tur.Tekil,   sag, new Vector2(-580f, 490f),  66f, new Color(.84f, .80f, .98f));
 
@@ -400,12 +379,12 @@ public class MobilKontrol : MonoBehaviour
     }
 
     void Ekle(string ad, string alan, Tur tur, Vector2 kose, Vector2 kaydir,
-              float yaricap, Color renk, System.Action islev = null)
+              float yaricap, Color renk)
     {
         var d = new Dugme
         {
             Ad = ad, Alan = alan, Tur = tur, Kose = kose,
-            Kaydir = kaydir, Yaricap = yaricap, Renk = renk, Islev = islev
+            Kaydir = kaydir, Yaricap = yaricap, Renk = renk
         };
 
         d.Gorsel = Gorsel(_katman.transform, "Dugme_" + ad, kose, kaydir,
@@ -493,21 +472,7 @@ public class MobilKontrol : MonoBehaviour
                 Nokta(p, B, .5f, .5f, .065f);
                 break;
 
-            case "zipla":                                    // yukarı ok + zemin
-                Cizgi(p, B, .5f, .30f, .5f, .78f, K);
-                Cizgi(p, B, .28f, .58f, .5f, .80f, K);
-                Cizgi(p, B, .72f, .58f, .5f, .80f, K);
-                Cizgi(p, B, .22f, .18f, .78f, .18f, K);
-                break;
 
-            case "tirman":                                   // basamak + yukarı ok
-                Cizgi(p, B, .16f, .24f, .46f, .24f, K);
-                Cizgi(p, B, .46f, .24f, .46f, .50f, K);
-                Cizgi(p, B, .46f, .50f, .78f, .50f, K);
-                Cizgi(p, B, .78f, .50f, .78f, .84f, K);
-                Cizgi(p, B, .64f, .72f, .78f, .86f, K);
-                Cizgi(p, B, .92f, .72f, .78f, .86f, K);
-                break;
 
             case "comel":                                    // aşağı ok + zemin
                 Cizgi(p, B, .5f, .82f, .5f, .34f, K);
