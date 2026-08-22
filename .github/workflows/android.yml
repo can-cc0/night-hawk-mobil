@@ -1,0 +1,50 @@
+name: Android APK
+
+on:
+  workflow_dispatch:
+
+jobs:
+  derle:
+    name: APK derle
+    runs-on: ubuntu-latest
+    steps:
+      - name: Diskte yer ac
+        run: |
+          echo "--- once ---"; df -h / | tail -1
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android/sdk/ndk /opt/ghc \
+                      /usr/local/share/boost /usr/local/lib/node_modules "$AGENT_TOOLSDIRECTORY" || true
+          sudo apt-get clean || true
+          echo "--- sonra ---"; df -h / | tail -1
+
+      - name: Depoyu al
+        uses: actions/checkout@v4
+        with:
+          lfs: false
+
+      - name: Kutuphane onbellegi
+        uses: actions/cache@v4
+        with:
+          path: Library
+          key: Library-Android-${{ hashFiles('Assets/**', 'Packages/**', 'ProjectSettings/**') }}
+          restore-keys: |
+            Library-Android-
+            Library-
+
+      - name: Unity ile derle
+        uses: game-ci/unity-builder@v4
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        with:
+          unityVersion: 6000.0.40f1
+          targetPlatform: Android
+          androidExportType: androidPackage
+          allowDirtyBuild: true
+
+      - name: APK'yi yukle
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: NightHawk-APK
+          path: build/Android
+          if-no-files-found: warn
