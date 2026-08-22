@@ -12,7 +12,27 @@ VideoClipImporter:
   flipVertical: 0
   flipHorizontal: 0
   importAudio: 1
-  targetSettings: {}
+  targetSettings:
+    Android:
+      serializedVersion: 2
+      resizeMode: 1
+      aspectRatio: 1
+      customWidth: 1280
+      customHeight: 720
+      bitrateMode: 1
+      spatialQuality: 1
+      targetCodec: 0
+      transcodeSkipped: 0
+    Standalone:
+      serializedVersion: 2
+      resizeMode: 0
+      aspectRatio: 1
+      customWidth: 0
+      customHeight: 0
+      bitrateMode: 1
+      spatialQuality: 1
+      targetCodec: 0
+      transcodeSkipped: 0
   userData: 
   assetBundleName: 
   assetBundleVariant: 
