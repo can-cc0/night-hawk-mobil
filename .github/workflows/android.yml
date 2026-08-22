@@ -21,6 +21,36 @@ jobs:
         with:
           lfs: false
 
+
+      - name: Videolari WebM'e cevir
+        run: |
+          # Unity'nin Linux surumu mp4 okuyamiyor ("Error while reading movie"),
+          # bu yuzden videolar hic ice aktarilamiyor ve ekran siyah kaliyor.
+          # WebM/VP8 Linux editorde yerel olarak destekleniyor.
+          # .meta dosyasi ayni guid ile yeniden adlandiriliyor ki sahnelerdeki
+          # referanslar bozulmasin.
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg >/dev/null 2>&1
+          ffmpeg -version | head -1
+          find Assets -name "*.mp4" -print0 | while IFS= read -r -d '' f; do
+            hedef="${f%.mp4}.webm"
+            echo "-> $f"
+            ffmpeg -y -loglevel error -i "$f" \
+              -c:v libvpx -b:v 1800k -crf 30 -cpu-used 5 -deadline good \
+              -vf "scale='min(1280,iw)':-2" \
+              -c:a libvorbis -b:a 128k \
+              "$hedef"
+            if [ -s "$hedef" ]; then
+              [ -f "$f.meta" ] && mv "$f.meta" "$hedef.meta"
+              rm -f "$f"
+              echo "   olustu: $(du -h "$hedef" | cut -f1)"
+            else
+              echo "   CEVIRME BASARISIZ, mp4 birakiliyor"
+              rm -f "$hedef"
+            fi
+          done
+          echo "--- sonuc ---"
+          find Assets -name "*.webm" -o -name "*.mp4" | sed 's/^/   /'
+
       - name: Kutuphane onbellegi
         uses: actions/cache@v4
         with:
