@@ -1,0 +1,20 @@
+name: Unity lisans istegi
+on:
+  workflow_dispatch:
+
+jobs:
+  istek:
+    name: Aktivasyon dosyasi uret
+    runs-on: ubuntu-latest
+    steps:
+      - name: Aktivasyon dosyasi iste
+        uses: game-ci/unity-request-activation-file@v2
+        id: istek
+        with:
+          unityVersion: 6000.0.40f1
+
+      - name: Dosyayi yukle
+        uses: actions/upload-artifact@v4
+        with:
+          name: Unity_lisans_istegi
+          path: ${{ steps.istek.outputs.filePath }}
