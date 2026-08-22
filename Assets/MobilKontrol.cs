@@ -43,6 +43,8 @@ public class MobilKontrol : MonoBehaviour
     const float BAKIS_CARPANI = 0.16f;
     /// Cubugun tam gaz sayilacagi surukleme yaricapi (ekran pikseli).
     const float CUBUK_YARICAP = 140f;
+    /// Parmak yokken halkanin durdugu yer (tuval birimi, sol alt koseye gore).
+    static readonly Vector2 CUBUK_DINLENME = new Vector2(300f, 300f);
 
     static GameObject _kok;
     static Sprite _daire;
@@ -238,7 +240,7 @@ public class MobilKontrol : MonoBehaviour
         var t = _katman.transform;
 
         // Hareket cubugu — yalnizca gorsel; degerleri Update hesapliyor.
-        _cubukArka = Gorsel(t, "CubukArka", new Vector2(0f, 0f), new Vector2(250f, 250f),
+        _cubukArka = Gorsel(t, "CubukArka", new Vector2(0f, 0f), CUBUK_DINLENME,
                             new Vector2(300f, 300f), new Color(1f, 1f, 1f, 0.12f), false);
         _cubukTopuz = Gorsel(_cubukArka, "CubukTopuz", new Vector2(.5f, .5f), Vector2.zero,
                              new Vector2(130f, 130f), new Color(1f, 1f, 1f, 0.30f), false);
@@ -255,17 +257,25 @@ public class MobilKontrol : MonoBehaviour
         Dugme(t, "II",      new Vector2(.5f, 1f), new Vector2(0f, -78f),    50f, YOL_DURAKLAT, new Color(1f, 1f, 1f));
     }
 
+    /// <summary>
+    /// Cubuk dinamik: parmagin dokundugu yer merkez oluyor. Halka da oraya
+    /// tasiniyor, birakilinca sol alttaki dinlenme yerine donuyor. Yoksa
+    /// gorsel ile gercek merkez birbirini tutmaz.
+    /// </summary>
     void CubuguCiz()
     {
-        if (_cubukTopuz == null) return;
-        float o = Screen.height / 1080f;
+        if (_cubukTopuz == null || _cubukArka == null) return;
+        float o = Mathf.Max(0.0001f, Screen.height / 1080f);
+
         if (_cubukParmak == -1)
         {
+            _cubukArka.anchoredPosition = CUBUK_DINLENME;
             _cubukTopuz.anchoredPosition = Vector2.zero;
             return;
         }
-        Vector2 fark = Vector2.ClampMagnitude(_cubukSon - _cubukMerkez, CUBUK_YARICAP);
-        _cubukTopuz.anchoredPosition = fark / Mathf.Max(0.0001f, o);
+        _cubukArka.anchoredPosition = _cubukMerkez / o;   // ekran pikseli -> tuval birimi
+        _cubukTopuz.anchoredPosition =
+            Vector2.ClampMagnitude(_cubukSon - _cubukMerkez, CUBUK_YARICAP) / o;
     }
 
     void Dugme(Transform ust, string etiket, Vector2 kose, Vector2 kaydir,
