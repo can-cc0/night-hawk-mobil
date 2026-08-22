@@ -70,6 +70,8 @@ public class MobilKontrol : MonoBehaviour
         public RectTransform Gorsel;
         public Image Zemin, Simge;
         public int Parmak = -1;
+        public Vector2 SonKonum;       // bakis gecirmek icin
+        public bool BakisGecirir;      // sag taraftaki dugmeler kamerayi da cevirir
         public bool OncekiBasili;      // kenar yakalamak icin
         public bool AnahtarAcik;       // yalnizca Tur.Anahtar
 
@@ -95,6 +97,7 @@ public class MobilKontrol : MonoBehaviour
     Vector2 _yon, _yonHedef, _bakisDelta;
 
     InputManager _girdi;
+    CameraManager _kamera;
     FieldInfo _alanKamera;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
@@ -131,6 +134,7 @@ public class MobilKontrol : MonoBehaviour
             if (sahne == SADECE_OYUNDA[i]) { oyunda = true; break; }
 
         _girdi = null;
+        _kamera = null;
         Birak();
 
         if (!oyunda)
@@ -165,6 +169,7 @@ public class MobilKontrol : MonoBehaviour
         {
             _girdi = InputManager.instance;
             if (_girdi == null) return;
+            _kamera = FindFirstObjectByType<CameraManager>();
         }
 
         // Duraklatma menusu acikken kontroller cekilsin, menuye dokunmayi yemesin.
@@ -174,29 +179,42 @@ public class MobilKontrol : MonoBehaviour
 
         DokunuslariOku();
         DugmeleriIsle();
-        YazHareket(_yon, _bakisDelta * (BAKIS_BIRIMI / Mathf.Max(1f, Screen.height)));
+
+        // Nisandayken oyun camLookSpeed'i 0.1'den 0.05'e dusuruyor. Telafi
+        // edilmezse kamera yari hiza iniyor; 1.7 ile ~0.85 kat kaliyor.
+        float telafi = (_kamera != null && _kamera.isScoped) ? 1.7f : 1f;
+        YazHareket(_yon, _bakisDelta * (telafi * BAKIS_BIRIMI / Mathf.Max(1f, Screen.height)));
     }
+
+    readonly HashSet<int> _aktif = new HashSet<int>();
 
     void DokunuslariOku()
     {
         _bakisDelta = Vector2.zero;
         var ts = Touchscreen.current;
-        if (ts == null) return;
+        if (ts == null) { Birak(); return; }
 
         float bolme = Screen.width * 0.42f;
         var parmaklar = ts.touches;
+        _aktif.Clear();
 
         for (int i = 0; i < parmaklar.Count; i++)
         {
             var p = parmaklar[i];
             var faz = p.phase.ReadValue();
+            bool canli = faz == UnityEngine.InputSystem.TouchPhase.Began ||
+                         faz == UnityEngine.InputSystem.TouchPhase.Moved ||
+                         faz == UnityEngine.InputSystem.TouchPhase.Stationary;
+            if (!canli) continue;
+
             int kimlik = p.touchId.ReadValue();
             Vector2 konum = p.position.ReadValue();
+            _aktif.Add(kimlik);
 
             if (faz == UnityEngine.InputSystem.TouchPhase.Began)
             {
                 Dugme d = DugmeBul(konum);
-                if (d != null) { d.Parmak = kimlik; continue; }
+                if (d != null) { d.Parmak = kimlik; d.SonKonum = konum; continue; }
 
                 if (konum.x < bolme && _cubukParmak == -1)
                 {
@@ -206,26 +224,38 @@ public class MobilKontrol : MonoBehaviour
                 {
                     _bakisParmak = kimlik; _bakisSon = konum;
                 }
+                continue;
             }
-            else if (faz == UnityEngine.InputSystem.TouchPhase.Moved ||
-                     faz == UnityEngine.InputSystem.TouchPhase.Stationary)
+
+            if (kimlik == _cubukParmak) { _cubukSon = konum; continue; }
+            if (kimlik == _bakisParmak)
             {
-                if (kimlik == _cubukParmak) _cubukSon = konum;
-                else if (kimlik == _bakisParmak)
-                {
-                    _bakisDelta += konum - _bakisSon;
-                    _bakisSon = konum;
-                }
+                _bakisDelta += konum - _bakisSon;
+                _bakisSon = konum;
+                continue;
             }
-            else if (faz == UnityEngine.InputSystem.TouchPhase.Ended ||
-                     faz == UnityEngine.InputSystem.TouchPhase.Canceled)
+
+            // Sag taraftaki dugmeyi tutan parmak ayni anda kamerayi da cevirsin.
+            // Aksi halde ATES basiliyken bakacak parmak kalmiyor.
+            for (int k = 0; k < _dugmeler.Count; k++)
             {
-                if (kimlik == _cubukParmak) { _cubukParmak = -1; _yonHedef = Vector2.zero; }
-                else if (kimlik == _bakisParmak) _bakisParmak = -1;
-                else for (int k = 0; k < _dugmeler.Count; k++)
-                    if (_dugmeler[k].Parmak == kimlik) _dugmeler[k].Parmak = -1;
+                var d = _dugmeler[k];
+                if (d.Parmak != kimlik) continue;
+                if (d.BakisGecirir) _bakisDelta += konum - d.SonKonum;
+                d.SonKonum = konum;
+                break;
             }
         }
+
+        // TAKILMAYI ONLEYEN SIFIRLAMA: ekranda olmayan bir parmagin tuttugu her
+        // sey birakiliyor. Unity touchId'leri geri donusturdugu icin Ended olayi
+        // kacabiliyordu ve buton sonsuza kadar basili kaliyordu.
+        if (_cubukParmak != -1 && !_aktif.Contains(_cubukParmak))
+        { _cubukParmak = -1; _yonHedef = Vector2.zero; }
+        if (_bakisParmak != -1 && !_aktif.Contains(_bakisParmak)) _bakisParmak = -1;
+        for (int k = 0; k < _dugmeler.Count; k++)
+            if (_dugmeler[k].Parmak != -1 && !_aktif.Contains(_dugmeler[k].Parmak))
+                _dugmeler[k].Parmak = -1;
 
         // Cubuk: olu bolgeyi gectiyse BIRIM vektor (WASD gibi), yoksa sifir.
         if (_cubukParmak != -1)
@@ -384,7 +414,8 @@ public class MobilKontrol : MonoBehaviour
         var d = new Dugme
         {
             Ad = ad, Alan = alan, Tur = tur, Kose = kose,
-            Kaydir = kaydir, Yaricap = yaricap, Renk = renk
+            Kaydir = kaydir, Yaricap = yaricap, Renk = renk,
+            BakisGecirir = kose.x > 0.9f
         };
 
         d.Gorsel = Gorsel(_katman.transform, "Dugme_" + ad, kose, kaydir,
