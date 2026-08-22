@@ -34,11 +34,11 @@ jobs:
           find Assets -name "*.mp4" -print0 | while IFS= read -r -d '' f; do
             hedef="${f%.mp4}.webm"
             echo "-> $f"
-            ffmpeg -y -loglevel error -i "$f" \
+            ffmpeg -nostdin -y -loglevel error -i "$f" \
               -c:v libvpx -b:v 1800k -crf 30 -cpu-used 5 -deadline good \
               -vf "scale='min(1280,iw)':-2" \
               -c:a libvorbis -b:a 128k \
-              "$hedef"
+              "$hedef" || true
             if [ -s "$hedef" ]; then
               [ -f "$f.meta" ] && mv "$f.meta" "$hedef.meta"
               rm -f "$f"
