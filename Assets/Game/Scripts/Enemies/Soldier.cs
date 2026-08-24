@@ -82,6 +82,9 @@ public class Soldier : MonoBehaviour {
     public Transform gunSmokePoint;
     public GameObject bloodEffect;
 
+    /// Muttefik uyarma taramasinin bir sonraki zamani.
+    private float nextAllyAlertTime;
+
     /// <summary>
     /// Dokunmatikte nisan almak fareye gore cok daha yavas. Masaustu ayarlariyla
     /// (25 hasar, %90 isabet, 100 m menzil) oyuncu 4 vurusta oluyor ve donmeye
@@ -165,7 +168,8 @@ public class Soldier : MonoBehaviour {
             enemyUIManager.SetEngagedActive(true);
 
             // Notify nearby soldiers in overlap sphere if found player
-            if (playerInVision) {
+            if (playerInVision && Time.time >= nextAllyAlertTime) {
+                nextAllyAlertTime = Time.time + 0.5f;
                 Collider[] soldiers = Physics.OverlapSphere(transform.position, alertAllyRadius, soldierLayer);
                 foreach (Collider soldierCollider in soldiers) {
                     Soldier soldier = soldierCollider.GetComponent<Soldier>();
