@@ -35,11 +35,20 @@ public static class MobilAyar
         QualitySettings.vSyncCount = 0;
         Application.targetFrameRate = 60;
 
-        QualitySettings.shadowDistance = 35f;          // 150 m -> 35 m
+        QualitySettings.shadowDistance = 28f;          // 150 m -> 28 m
         QualitySettings.shadowResolution = ShadowResolution.Low;
         QualitySettings.shadowCascades = 1;
         QualitySettings.antiAliasing = 0;              // 2x MSAA kapali
         QualitySettings.pixelLightCount = 1;           // 4 -> 1
+
+        // Dolgu hizi ve bellek bandi: mobilde asil darbogaz burasi.
+        QualitySettings.globalTextureMipmapLimit = 1;  // dokular yari cozunurluk
+        QualitySettings.anisotropicFiltering = AnisotropicFiltering.Disable;
+        QualitySettings.lodBias = 0.7f;                // uzak modeller daha erken sadelesir
+        QualitySettings.skinWeights = SkinWeights.TwoBones;
+        QualitySettings.realtimeReflectionProbes = false;
+        QualitySettings.softVegetation = false;
+        QualitySettings.particleRaycastBudget = 16;
     }
 
     /// <summary>
