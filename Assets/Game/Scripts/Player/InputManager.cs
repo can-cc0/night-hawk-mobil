@@ -1,5 +1,4 @@
 using SunTemple;
-using System.Collections;
 using UnityEngine;
 
 public class InputManager : MonoBehaviour {
@@ -75,8 +74,27 @@ public class InputManager : MonoBehaviour {
     public void HandleAllInputs() {
         HandlePauseGameInput();
         HandleMovementInput(); ;
-        StartCoroutine(HandleInteractInput());
-        StartCoroutine(HandleLootInput());
+        BayraklariZamanla();
+    }
+
+    // Interact ve Loot bayraklari 0.2 sn sonra kendiliginden sonuyor. Onceki
+    // surumde bu is her karede iki StartCoroutine + iki new WaitForSeconds ile
+    // yapiliyordu: 60 fps'te saniyede 120 nesne, yani surekli cop toplama ve
+    // gozle gorulur takilma. Ayni davranis zaman damgasiyla, sifir ayirma ile.
+    private float interactSonme, lootSonme;
+
+    private void BayraklariZamanla() {
+        if (interactInput) {
+            if (interactSonme <= 0f) interactSonme = Time.time + 0.2f;
+            else if (Time.time >= interactSonme) { interactInput = false; interactSonme = 0f; }
+        }
+        else interactSonme = 0f;
+
+        if (lootInput) {
+            if (lootSonme <= 0f) lootSonme = Time.time + 0.2f;
+            else if (Time.time >= lootSonme) { lootInput = false; lootSonme = 0f; }
+        }
+        else lootSonme = 0f;
     }
 
     private void HandleMovementInput() {
@@ -110,17 +128,5 @@ public class InputManager : MonoBehaviour {
         crouchInput = false;
     }
 
-    IEnumerator HandleInteractInput() {
-        yield return new WaitForSeconds(0.2f);
-        if (interactInput) {
-            interactInput = false;
-        }
-    }
 
-    IEnumerator HandleLootInput() {
-        yield return new WaitForSeconds(0.2f);
-        if (lootInput) {
-            lootInput = false;
-        }
-    }
 }
