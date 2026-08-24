@@ -12,29 +12,29 @@ using UnityEngine.InputSystem;
 ///
 /// * Oyun WASD icin yazilmis. PlayerMovement.HandleMovement icinde
 ///   `moveAmount > 0.5f` sert bir kapi: altinda kalinca hicbir hiz carpani
-///   uygulanmiyor, karakter animasyonsuz suruklenip duruyor. moveAmount ise
-///   Clamp01(|x|+|y|). Bu yuzden cubuk analog bir oran degil, olu bolgeyi
-///   gectiginde BIRIM VEKTOR uretiyor — tipki WASD gibi. Yuru/kos ayrimini
-///   klavyedeki shift gibi KOS anahtari yapiyor.
+///   uygulanmiyor. moveAmount = Clamp01(|x|+|y|). Bu yuzden cubuk analog oran
+///   degil, olu bolgeyi gectiginde BIRIM VEKTOR uretiyor — tipki WASD gibi.
+///   Yuru/kos ayrimini klavyedeki shift gibi KOS anahtari yapiyor.
 ///
-/// * AnimatorManager.UpdateAnimationValues degerleri 0/±0.5/±1'e kirpiyor.
-///   Ham dokunma degeri 0.55 sinirinda titredigi icin animasyon zipliyordu;
-///   yon yumusatiliyor.
+/// * AnimatorManager.UpdateAnimationValues degerleri 0/±0.5/±1'e kirpiyor;
+///   ham dokunma degeri sinirda titreyince animasyon zipliyordu, yon yumusatildi.
 ///
-/// * CameraManager: `lookAngle += cameraInputX * camLookSpeed` ve camLookSpeed
-///   yalnizca 0.1. Yani 90 derece donmek icin toplam 900 birim gerekiyor.
-///   Eski 0.16 carpani ekran boyu suruklemede ancak ~30 derece veriyordu.
-///   Simdi ekran yuksekligine gore normalize edilip carpiliyor.
+/// * CameraManager: `lookAngle += cameraInputX * camLookSpeed`, camLookSpeed 0.1.
+///   90 derece donmek icin toplam 900 birim gerekiyor; surukleme ekran
+///   yuksekligine gore normalize edilip carpiliyor. Nisandayken oyun bu degeri
+///   0.05'e dusurdugu icin ayrica telafi ediliyor.
 ///
 /// * FiringController: `if (fireInput && scopeInput && ...)` — oyunda ATES
-///   ancak NISAN basiliyken calisiyor. Dokunmatikte basili tutulamadigi icin
-///   ates hic olmuyordu. NISAN artik anahtar (basinca acik kaliyor).
+///   ancak NISAN aciyken calisiyor. Bu yuzden ATES dugmesi basili tutuldugunda
+///   nisani da kendisi aciyor; tek dokunusla nisan alip ates ediliyor. NISAN
+///   dugmesi ise surekli nisanda kalmak icin ayri bir anahtar olarak duruyor.
 ///
-/// * PlayerMovement: kosma icin `sprintInput == true` gerekiyor ama
-///   Sprint.canceled bayragi hemen sifirliyor. KOS da anahtar yapildi.
+/// * PlayerMovement: kosma icin sprintInput gerekiyor ama Sprint.canceled
+///   bayragi hemen sifirliyor; KOS anahtar yapildi.
 ///
-/// Bayraklar InputManager'a dogrudan yaziliyor; her bayragin oyun tarafinda
-/// nasil temizlendigine gore uc davranis var (Basili / Tekil / Anahtar).
+/// DUZENLEME KIPI: sag ustteki ayar dugmesi butonlari surukleyerek yeniden
+/// yerlestirmeyi aciyor. Konumlar PlayerPrefs'e yaziliyor, oyun yeniden
+/// acildiginda geri yukleniyor.
 /// </summary>
 [DefaultExecutionOrder(-1000)]
 public class MobilKontrol : MonoBehaviour
@@ -44,39 +44,44 @@ public class MobilKontrol : MonoBehaviour
     /// Ekran yuksekligi kadar surukleme kac birim kamera girdisi versin.
     /// camLookSpeed 0.1 oldugu icin 1700 birim ≈ 170 derece donus demek.
     const float BAKIS_BIRIMI = 1700f;
+    /// Nisandayken oyun camLookSpeed'i yariya dusuruyor; telafi carpani.
+    const float NISAN_TELAFI = 1.7f;
     /// Cubugun tam gaz sayilacagi surukleme yaricapi (1080p'ye gore piksel).
     const float CUBUK_YARICAP = 150f;
     /// Bu oranin altinda parmak oynamasi hareket sayilmiyor.
     const float OLU_BOLGE = 0.16f;
     /// Parmak yokken halkanin durdugu yer (tuval birimi).
     static readonly Vector2 CUBUK_DINLENME = new Vector2(300f, 300f);
+    /// Kayitli konumlarin PlayerPrefs onadi.
+    const string KAYIT = "mobilkontrol_";
 
     /// <summary>Bayragin oyun tarafinda nasil temizlendigine gore davranis.</summary>
     enum Tur
     {
         Basili,    // parmak durdukca true, kalkinca false
         Tekil,     // basisa bir kez true; temizlemesi oyunun isi
-        Anahtar    // basinca acilir, tekrar basinca kapanir
+        Anahtar,   // basinca acilir, tekrar basinca kapanir
+        Arac       // oyun bayragi degil: duzenleme kipi araclari
     }
 
     class Dugme
     {
         public string Ad, Alan;
         public Tur Tur;
-        public Vector2 Kose, Kaydir;
+        public Vector2 Kose, Varsayilan, Kaydir;
         public float Yaricap;
         public Color Renk;
+        public System.Action Islev;
+        public bool Tasinabilir = true;
 
         public RectTransform Gorsel;
-        public Image Zemin, Simge;
+        public Image Zemin, Cerceve, Simge;
         public int Parmak = -1;
-        public Vector2 SonKonum;       // bakis gecirmek icin
-        public bool BakisGecirir;      // sag taraftaki dugmeler kamerayi da cevirir
-        public bool OncekiBasili;      // kenar yakalamak icin
-        public bool AnahtarAcik;       // yalnizca Tur.Anahtar
+        public Vector2 SonKonum;
+        public bool BakisGecirir;
+        public bool OncekiBasili;
+        public bool AnahtarAcik;
 
-        /// Ekran konumu her karede yeniden hesaplaniyor; cihaz donunce
-        /// kurulum anindaki degerler bayatliyor.
         public Vector2 EkranMerkez(float olcek)
         {
             return new Vector2(Kose.x * Screen.width + Kaydir.x * olcek,
@@ -89,16 +94,22 @@ public class MobilKontrol : MonoBehaviour
     static readonly Dictionary<string, Sprite> _simgeler = new Dictionary<string, Sprite>();
 
     readonly List<Dugme> _dugmeler = new List<Dugme>();
+    readonly HashSet<int> _aktif = new HashSet<int>();
     GameObject _katman;
     RectTransform _cubukArka, _cubukTopuz;
+    Image _perde;
+    Dugme _ates, _nisan, _kaydet, _sifirla;
 
     int _cubukParmak = -1, _bakisParmak = -1;
     Vector2 _cubukMerkez, _cubukSon, _bakisSon;
     Vector2 _yon, _yonHedef, _bakisDelta;
+    bool _duzenleme;
 
     InputManager _girdi;
     CameraManager _kamera;
     FieldInfo _alanKamera;
+
+    static float Olcek() { return Mathf.Max(0.0001f, Screen.height / 1080f); }
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     static void Baslat()
@@ -135,6 +146,7 @@ public class MobilKontrol : MonoBehaviour
 
         _girdi = null;
         _kamera = null;
+        _duzenleme = false;
         Birak();
 
         if (!oyunda)
@@ -175,19 +187,45 @@ public class MobilKontrol : MonoBehaviour
         // Duraklatma menusu acikken kontroller cekilsin, menuye dokunmayi yemesin.
         bool duruyor = _girdi.isPaused;
         if (_katman.activeSelf == duruyor) _katman.SetActive(!duruyor);
-        if (duruyor) { Birak(); YazHareket(Vector2.zero, Vector2.zero); return; }
+        if (duruyor) { Birak(); Sifirla(); return; }
+
+        if (_duzenleme)
+        {
+            DuzenlemeDokunus();
+            Sifirla();                 // duzenlerken oyun girdisi donuk
+            return;
+        }
 
         DokunuslariOku();
         DugmeleriIsle();
 
-        // Nisandayken oyun camLookSpeed'i 0.1'den 0.05'e dusuruyor. Telafi
-        // edilmezse kamera yari hiza iniyor; 1.7 ile ~0.85 kat kaliyor.
-        float telafi = (_kamera != null && _kamera.isScoped) ? 1.7f : 1f;
+        float telafi = (_kamera != null && _kamera.isScoped) ? NISAN_TELAFI : 1f;
         YazHareket(_yon, _bakisDelta * (telafi * BAKIS_BIRIMI / Mathf.Max(1f, Screen.height)));
     }
 
-    readonly HashSet<int> _aktif = new HashSet<int>();
+    /// <summary>Tum oyun girdilerini bosa cekiyor.</summary>
+    void Sifirla()
+    {
+        if (_girdi == null) return;
+        _girdi.movementInput = Vector2.zero;
+        if (_alanKamera != null) _alanKamera.SetValue(_girdi, Vector2.zero);
+        _girdi.fireInput = false;
+        _girdi.scopeInput = false;
+        _girdi.sprintInput = false;
+        _girdi.reloadInput = false;
+        _girdi.assassinateInput = false;
+    }
 
+    void YazHareket(Vector2 hareket, Vector2 bakis)
+    {
+        if (_girdi == null) return;
+        _girdi.movementInput = hareket;
+        if (_alanKamera != null) _alanKamera.SetValue(_girdi, bakis);
+    }
+
+    // ======================================================================
+    // Oynanis dokunuslari
+    // ======================================================================
     void DokunuslariOku()
     {
         _bakisDelta = Vector2.zero;
@@ -202,10 +240,7 @@ public class MobilKontrol : MonoBehaviour
         {
             var p = parmaklar[i];
             var faz = p.phase.ReadValue();
-            bool canli = faz == UnityEngine.InputSystem.TouchPhase.Began ||
-                         faz == UnityEngine.InputSystem.TouchPhase.Moved ||
-                         faz == UnityEngine.InputSystem.TouchPhase.Stationary;
-            if (!canli) continue;
+            if (!Canli(faz)) continue;
 
             int kimlik = p.touchId.ReadValue();
             Vector2 konum = p.position.ReadValue();
@@ -235,8 +270,8 @@ public class MobilKontrol : MonoBehaviour
                 continue;
             }
 
-            // Sag taraftaki dugmeyi tutan parmak ayni anda kamerayi da cevirsin.
-            // Aksi halde ATES basiliyken bakacak parmak kalmiyor.
+            // Sagdaki dugmeyi tutan parmak ayni anda kamerayi da cevirsin;
+            // aksi halde ATES basiliyken bakacak parmak kalmiyor.
             for (int k = 0; k < _dugmeler.Count; k++)
             {
                 var d = _dugmeler[k];
@@ -247,27 +282,15 @@ public class MobilKontrol : MonoBehaviour
             }
         }
 
-        // TAKILMAYI ONLEYEN SIFIRLAMA: ekranda olmayan bir parmagin tuttugu her
-        // sey birakiliyor. Unity touchId'leri geri donusturdugu icin Ended olayi
-        // kacabiliyordu ve buton sonsuza kadar basili kaliyordu.
-        if (_cubukParmak != -1 && !_aktif.Contains(_cubukParmak))
-        { _cubukParmak = -1; _yonHedef = Vector2.zero; }
-        if (_bakisParmak != -1 && !_aktif.Contains(_bakisParmak)) _bakisParmak = -1;
-        for (int k = 0; k < _dugmeler.Count; k++)
-            if (_dugmeler[k].Parmak != -1 && !_aktif.Contains(_dugmeler[k].Parmak))
-                _dugmeler[k].Parmak = -1;
+        BayatParmaklariBirak();
 
-        // Cubuk: olu bolgeyi gectiyse BIRIM vektor (WASD gibi), yoksa sifir.
         if (_cubukParmak != -1)
         {
             Vector2 fark = _cubukSon - _cubukMerkez;
-            float o = Mathf.Max(0.0001f, Screen.height / 1080f);
-            _yonHedef = fark.magnitude < CUBUK_YARICAP * o * OLU_BOLGE
+            _yonHedef = fark.magnitude < CUBUK_YARICAP * Olcek() * OLU_BOLGE
                       ? Vector2.zero : fark.normalized;
         }
 
-        // Yon yumusatiliyor: animasyon degerleri 0.55'te kirpildigi icin ham
-        // deger titreyince yuru/kos animasyonu zipliyor.
         _yon = _yonHedef == Vector2.zero
              ? Vector2.zero
              : Vector2.Lerp(_yon, _yonHedef, 1f - Mathf.Exp(-18f * Time.deltaTime)).normalized;
@@ -275,11 +298,26 @@ public class MobilKontrol : MonoBehaviour
         CubuguCiz();
     }
 
-    void YazHareket(Vector2 hareket, Vector2 bakis)
+    static bool Canli(UnityEngine.InputSystem.TouchPhase f)
     {
-        if (_girdi == null) return;
-        _girdi.movementInput = hareket;
-        if (_alanKamera != null) _alanKamera.SetValue(_girdi, bakis);
+        return f == UnityEngine.InputSystem.TouchPhase.Began ||
+               f == UnityEngine.InputSystem.TouchPhase.Moved ||
+               f == UnityEngine.InputSystem.TouchPhase.Stationary;
+    }
+
+    /// <summary>
+    /// Ekranda olmayan bir parmagin tuttugu her sey birakiliyor. Unity touchId
+    /// degerlerini geri donusturdugu icin Ended olayi kacabiliyor ve buton
+    /// sonsuza kadar basili kaliyordu.
+    /// </summary>
+    void BayatParmaklariBirak()
+    {
+        if (_cubukParmak != -1 && !_aktif.Contains(_cubukParmak))
+        { _cubukParmak = -1; _yonHedef = Vector2.zero; }
+        if (_bakisParmak != -1 && !_aktif.Contains(_bakisParmak)) _bakisParmak = -1;
+        for (int k = 0; k < _dugmeler.Count; k++)
+            if (_dugmeler[k].Parmak != -1 && !_aktif.Contains(_dugmeler[k].Parmak))
+                _dugmeler[k].Parmak = -1;
     }
 
     void DugmeleriIsle()
@@ -287,28 +325,29 @@ public class MobilKontrol : MonoBehaviour
         for (int i = 0; i < _dugmeler.Count; i++)
         {
             var d = _dugmeler[i];
+            if (d.Tur == Tur.Arac && d.Ad != "ayar") continue;
+
             bool basili = d.Parmak != -1;
-            bool indi = basili && !d.OncekiBasili;     // yalnizca bu karede basildi
+            bool indi = basili && !d.OncekiBasili;
 
             switch (d.Tur)
             {
-                case Tur.Basili:                       // parmak durdukca acik
-                    Yaz(d.Alan, basili);
-                    break;
-
-                case Tur.Tekil:                        // bir kez; temizlemesi oyunun isi
-                    if (indi) Yaz(d.Alan, true);
-                    break;
-
-                case Tur.Anahtar:                      // bas-ac, tekrar bas-kapat
-                    if (indi) d.AnahtarAcik = !d.AnahtarAcik;
-                    Yaz(d.Alan, d.AnahtarAcik);
-                    break;
+                case Tur.Basili:  Yaz(d.Alan, basili); break;
+                case Tur.Tekil:   if (indi) Yaz(d.Alan, true); break;
+                case Tur.Anahtar: if (indi) d.AnahtarAcik = !d.AnahtarAcik;
+                                  Yaz(d.Alan, d.AnahtarAcik); break;
+                case Tur.Arac:    if (indi && d.Islev != null) d.Islev(); break;
             }
 
             d.OncekiBasili = basili;
             Boya(d, basili);
         }
+
+        // ATES basiliyken nisan da acilir: oyun `fireInput && scopeInput`
+        // istiyor, yoksa nisan alip ates edene kadar iki ayri dokunus gerekiyor.
+        bool atesBasili = _ates != null && _ates.Parmak != -1;
+        _girdi.fireInput = atesBasili;
+        _girdi.scopeInput = atesBasili || (_nisan != null && _nisan.AnahtarAcik);
     }
 
     void Yaz(string alan, bool deger)
@@ -328,33 +367,44 @@ public class MobilKontrol : MonoBehaviour
         }
     }
 
+    /// <summary>Arac dugmeleri once bakiliyor: ustuste gelirse onlar kazansin.</summary>
     Dugme DugmeBul(Vector2 ekranKonum)
     {
-        float o = Mathf.Max(0.0001f, Screen.height / 1080f);
-        Dugme en = null; float enYakin = float.MaxValue;
-        for (int i = 0; i < _dugmeler.Count; i++)
+        float o = Olcek();
+        for (int gecis = 0; gecis < 2; gecis++)
         {
-            var d = _dugmeler[i];
-            if (d.Parmak != -1) continue;
-            float r = d.Yaricap * o * 1.12f;
-            float u = (ekranKonum - d.EkranMerkez(o)).sqrMagnitude;
-            if (u <= r * r && u < enYakin) { enYakin = u; en = d; }
+            Dugme en = null; float enYakin = float.MaxValue;
+            for (int i = 0; i < _dugmeler.Count; i++)
+            {
+                var d = _dugmeler[i];
+                if (d.Parmak != -1) continue;
+                if (!d.Gorsel.gameObject.activeSelf) continue;
+                bool arac = d.Tur == Tur.Arac;
+                bool buGeciste = (gecis == 0) ? arac : !arac;
+                if (!buGeciste) continue;
+
+                float r = d.Yaricap * o * 1.12f;
+                float u = (ekranKonum - d.EkranMerkez(o)).sqrMagnitude;
+                if (u <= r * r && u < enYakin) { enYakin = u; en = d; }
+            }
+            if (en != null) return en;
         }
-        return en;
+        return null;
     }
 
     void Boya(Dugme d, bool basili)
     {
         bool vurgu = basili || (d.Tur == Tur.Anahtar && d.AnahtarAcik);
-        float a = vurgu ? 0.72f : 0.24f;
-        d.Zemin.color = new Color(d.Renk.r, d.Renk.g, d.Renk.b, a);
+        d.Zemin.color = new Color(d.Renk.r, d.Renk.g, d.Renk.b, vurgu ? 0.72f : 0.24f);
+        d.Cerceve.color = new Color(d.Renk.r, d.Renk.g, d.Renk.b,
+                                    _duzenleme ? 1f : (vurgu ? 1f : 0.85f));
         d.Simge.color = new Color(1f, 1f, 1f, vurgu ? 1f : 0.88f);
     }
 
     void CubuguCiz()
     {
         if (_cubukTopuz == null || _cubukArka == null) return;
-        float o = Mathf.Max(0.0001f, Screen.height / 1080f);
+        float o = Olcek();
 
         if (_cubukParmak == -1)
         {
@@ -368,7 +418,115 @@ public class MobilKontrol : MonoBehaviour
     }
 
     // ======================================================================
-    // Arayuz kurulumu
+    // Duzenleme kipi
+    // ======================================================================
+    void DuzenlemeKipi(bool ac)
+    {
+        _duzenleme = ac;
+        Birak();
+        Sifirla();
+        _perde.gameObject.SetActive(ac);
+        _kaydet.Gorsel.gameObject.SetActive(ac);
+        _sifirla.Gorsel.gameObject.SetActive(ac);
+        if (_cubukArka != null) _cubukArka.gameObject.SetActive(!ac);
+        for (int i = 0; i < _dugmeler.Count; i++) Boya(_dugmeler[i], false);
+    }
+
+    void DuzenlemeDokunus()
+    {
+        var ts = Touchscreen.current;
+        if (ts == null) return;
+
+        float o = Olcek();
+        var parmaklar = ts.touches;
+        _aktif.Clear();
+
+        for (int i = 0; i < parmaklar.Count; i++)
+        {
+            var p = parmaklar[i];
+            var faz = p.phase.ReadValue();
+            if (!Canli(faz)) continue;
+
+            int kimlik = p.touchId.ReadValue();
+            Vector2 konum = p.position.ReadValue();
+            _aktif.Add(kimlik);
+
+            if (faz == UnityEngine.InputSystem.TouchPhase.Began)
+            {
+                Dugme d = DugmeBul(konum);
+                if (d != null) { d.Parmak = kimlik; d.SonKonum = konum; }
+                continue;
+            }
+
+            for (int k = 0; k < _dugmeler.Count; k++)
+            {
+                var d = _dugmeler[k];
+                if (d.Parmak != kimlik) continue;
+                if (d.Tasinabilir)
+                {
+                    d.Kaydir += (konum - d.SonKonum) / o;
+                    Yerlestir(d);
+                }
+                d.SonKonum = konum;
+                break;
+            }
+        }
+
+        // Arac dugmeleri (ayar / kaydet / sifirla) basildiginda calissin.
+        for (int i = 0; i < _dugmeler.Count; i++)
+        {
+            var d = _dugmeler[i];
+            bool basili = d.Parmak != -1;
+            if (d.Tur == Tur.Arac && basili && !d.OncekiBasili && d.Islev != null)
+            { d.OncekiBasili = true; d.Islev(); return; }
+            d.OncekiBasili = basili;
+        }
+
+        BayatParmaklariBirak();
+    }
+
+    /// <summary>Dugmeyi ekran icinde tutup gorseli yeni yerine tasiyor.</summary>
+    void Yerlestir(Dugme d)
+    {
+        float o = Olcek();
+        float tuvalEn = Screen.width / o, tuvalBoy = 1080f;
+        Vector2 mutlak = new Vector2(d.Kose.x * tuvalEn + d.Kaydir.x,
+                                     d.Kose.y * tuvalBoy + d.Kaydir.y);
+        mutlak.x = Mathf.Clamp(mutlak.x, d.Yaricap, tuvalEn - d.Yaricap);
+        mutlak.y = Mathf.Clamp(mutlak.y, d.Yaricap, tuvalBoy - d.Yaricap);
+        d.Kaydir = mutlak - new Vector2(d.Kose.x * tuvalEn, d.Kose.y * tuvalBoy);
+        d.Gorsel.anchoredPosition = d.Kaydir;
+    }
+
+    void KonumlariKaydet()
+    {
+        for (int i = 0; i < _dugmeler.Count; i++)
+        {
+            var d = _dugmeler[i];
+            if (!d.Tasinabilir) continue;
+            PlayerPrefs.SetFloat(KAYIT + d.Ad + "_x", d.Kaydir.x);
+            PlayerPrefs.SetFloat(KAYIT + d.Ad + "_y", d.Kaydir.y);
+        }
+        PlayerPrefs.Save();
+        DuzenlemeKipi(false);
+    }
+
+    void KonumlariSifirla()
+    {
+        for (int i = 0; i < _dugmeler.Count; i++)
+        {
+            var d = _dugmeler[i];
+            if (!d.Tasinabilir) continue;
+            PlayerPrefs.DeleteKey(KAYIT + d.Ad + "_x");
+            PlayerPrefs.DeleteKey(KAYIT + d.Ad + "_y");
+            d.Kaydir = d.Varsayilan;
+            Yerlestir(d);
+        }
+        PlayerPrefs.Save();
+    }
+
+    // ======================================================================
+    // Kurulum
     // ======================================================================
     void Kur()
     {
@@ -385,6 +543,17 @@ public class MobilKontrol : MonoBehaviour
         sc.matchWidthOrHeight = 1f;
         var t = _katman.transform;
 
+        // Duzenleme kipinde ekrani karartan perde (dugmelerin altinda kalir).
+        var perde = new GameObject("Perde");
+        perde.transform.SetParent(t, false);
+        var prt = perde.AddComponent<RectTransform>();
+        prt.anchorMin = Vector2.zero; prt.anchorMax = Vector2.one;
+        prt.offsetMin = Vector2.zero; prt.offsetMax = Vector2.zero;
+        _perde = perde.AddComponent<Image>();
+        _perde.color = new Color(0f, 0f, 0f, 0.55f);
+        _perde.raycastTarget = false;
+        perde.SetActive(false);
+
         _cubukArka  = Gorsel(t, "CubukArka", new Vector2(0f, 0f), CUBUK_DINLENME,
                              300f, Halka(), new Color(1f, 1f, 1f, 0.16f));
         _cubukTopuz = Gorsel(_cubukArka, "CubukTopuz", new Vector2(.5f, .5f), Vector2.zero,
@@ -392,45 +561,67 @@ public class MobilKontrol : MonoBehaviour
 
         var sol = new Vector2(0f, 0f);
         var sag = new Vector2(1f, 0f);
-        var ust = new Vector2(.5f, 1f);
+        var ustOrta = new Vector2(.5f, 1f);
+        var ustSag = new Vector2(1f, 1f);
+        var ustSol = new Vector2(0f, 1f);
 
-        Ekle("ates",    "fireInput",         Tur.Basili,  sag, new Vector2(-205f, 205f), 118f, new Color(1f, .40f, .30f));
-        Ekle("nisan",   "scopeInput",        Tur.Anahtar, sag, new Vector2(-440f, 155f),  84f, new Color(.50f, .78f, 1f));
+        _ates = Ekle("ates",  "fireInput",  Tur.Basili,  sag, new Vector2(-205f, 205f), 118f, new Color(1f, .40f, .30f));
+        _nisan = Ekle("nisan","scopeInput", Tur.Anahtar, sag, new Vector2(-440f, 155f),  84f, new Color(.50f, .78f, 1f));
         Ekle("comel",   "crouchInput",       Tur.Tekil,   sag, new Vector2(-398f, 382f),  76f, new Color(.72f, 1f, .78f));
         Ekle("sarjor",  "reloadInput",       Tur.Basili,  sag, new Vector2(-612f, 252f),  70f, new Color(1f, .84f, .42f));
         Ekle("silah",   "switchWeaponInput", Tur.Tekil,   sag, new Vector2(-580f, 490f),  66f, new Color(.84f, .80f, .98f));
-
         Ekle("kos",     "sprintInput",       Tur.Anahtar, sol, new Vector2( 200f, 622f),  78f, new Color(.78f, .90f, 1f));
         Ekle("suikast", "assassinateInput",  Tur.Basili,  sol, new Vector2( 482f, 560f),  74f, new Color(1f, .52f, .52f));
         Ekle("al",      "interactInput",     Tur.Tekil,   sol, new Vector2( 622f, 360f),  70f, new Color(.95f, .95f, .58f));
         Ekle("yagma",   "lootInput",         Tur.Tekil,   sol, new Vector2( 700f, 562f),  64f, new Color(.74f, .86f, .96f));
+        Ekle("duraklat","pauseGameInput",    Tur.Tekil,   ustOrta, new Vector2(0f, -78f), 48f, new Color(1f, 1f, 1f));
 
-        Ekle("duraklat","pauseGameInput",    Tur.Tekil,   ust, new Vector2(   0f, -78f),  48f, new Color(1f, 1f, 1f));
+        var ayar = Ekle("ayar", null, Tur.Arac, ustSag, new Vector2(-78f, -78f), 44f,
+                        new Color(.85f, .85f, .90f));
+        ayar.Tasinabilir = false;
+        ayar.Islev = () => DuzenlemeKipi(!_duzenleme);
+
+        _kaydet = Ekle("kaydet", null, Tur.Arac, ustSol, new Vector2(160f, -86f), 58f,
+                       new Color(.55f, 1f, .60f));
+        _kaydet.Tasinabilir = false;
+        _kaydet.Islev = KonumlariKaydet;
+        _kaydet.Gorsel.gameObject.SetActive(false);
+
+        _sifirla = Ekle("sifirla", null, Tur.Arac, ustSol, new Vector2(320f, -86f), 58f,
+                        new Color(1f, .70f, .45f));
+        _sifirla.Tasinabilir = false;
+        _sifirla.Islev = KonumlariSifirla;
+        _sifirla.Gorsel.gameObject.SetActive(false);
     }
 
-    void Ekle(string ad, string alan, Tur tur, Vector2 kose, Vector2 kaydir,
-              float yaricap, Color renk)
+    Dugme Ekle(string ad, string alan, Tur tur, Vector2 kose, Vector2 kaydir,
+               float yaricap, Color renk)
     {
         var d = new Dugme
         {
             Ad = ad, Alan = alan, Tur = tur, Kose = kose,
-            Kaydir = kaydir, Yaricap = yaricap, Renk = renk,
-            BakisGecirir = kose.x > 0.9f
+            Varsayilan = kaydir, Yaricap = yaricap, Renk = renk,
+            BakisGecirir = kose.x > 0.9f && kose.y < 0.5f
         };
+        // Kayitli konum varsa oradan basla.
+        d.Kaydir = new Vector2(PlayerPrefs.GetFloat(KAYIT + ad + "_x", kaydir.x),
+                               PlayerPrefs.GetFloat(KAYIT + ad + "_y", kaydir.y));
 
-        d.Gorsel = Gorsel(_katman.transform, "Dugme_" + ad, kose, kaydir,
+        d.Gorsel = Gorsel(_katman.transform, "Dugme_" + ad, kose, d.Kaydir,
                           yaricap * 2f, Dolu(), new Color(renk.r, renk.g, renk.b, 0.24f));
         d.Zemin = d.Gorsel.GetComponent<Image>();
 
         var cerceve = Gorsel(d.Gorsel, "Cerceve", new Vector2(.5f, .5f), Vector2.zero,
                              yaricap * 2f, Halka(), new Color(renk.r, renk.g, renk.b, 0.85f));
-        cerceve.SetAsFirstSibling();
+        d.Cerceve = cerceve.GetComponent<Image>();
 
         var s = Gorsel(d.Gorsel, "Simge", new Vector2(.5f, .5f), Vector2.zero,
                        yaricap * 1.15f, Simge(ad), new Color(1f, 1f, 1f, 0.88f));
         d.Simge = s.GetComponent<Image>();
 
         _dugmeler.Add(d);
+        Yerlestir(d);          // kayit baska ekran boyutundan gelmis olabilir
+        return d;
     }
 
     RectTransform Gorsel(Transform ust, string ad, Vector2 kose, Vector2 kaydir,
@@ -483,11 +674,11 @@ public class MobilKontrol : MonoBehaviour
         const int B = 96;
         var p = new Color[B * B];
         for (int i = 0; i < p.Length; i++) p[i] = new Color(1f, 1f, 1f, 0f);
-        const float K = 0.085f;   // cizgi kalinligi
+        const float K = 0.085f;
 
         switch (ad)
         {
-            case "ates":                                     // artı nişangah
+            case "ates":                                     // nişangah
                 Yay(p, B, .5f, .5f, .30f, K * .8f);
                 Cizgi(p, B, .5f, .82f, .5f, .66f, K);
                 Cizgi(p, B, .5f, .34f, .5f, .18f, K);
@@ -502,8 +693,6 @@ public class MobilKontrol : MonoBehaviour
                 Cizgi(p, B, .16f, .5f, .84f, .5f, K * .7f);
                 Nokta(p, B, .5f, .5f, .065f);
                 break;
-
-
 
             case "comel":                                    // aşağı ok + zemin
                 Cizgi(p, B, .5f, .82f, .5f, .34f, K);
@@ -557,6 +746,26 @@ public class MobilKontrol : MonoBehaviour
                 Cizgi(p, B, .16f, .70f, .84f, .70f, K);
                 Cizgi(p, B, .16f, .56f, .84f, .56f, K * .8f);
                 Cizgi(p, B, .5f, .56f, .5f, .28f, K * .8f);
+                break;
+
+            case "ayar":                                     // sürgüler
+                Cizgi(p, B, .16f, .74f, .84f, .74f, K * .8f);
+                Cizgi(p, B, .16f, .50f, .84f, .50f, K * .8f);
+                Cizgi(p, B, .16f, .26f, .84f, .26f, K * .8f);
+                Nokta(p, B, .64f, .74f, .105f);
+                Nokta(p, B, .34f, .50f, .105f);
+                Nokta(p, B, .70f, .26f, .105f);
+                break;
+
+            case "kaydet":                                   // onay
+                Cizgi(p, B, .20f, .52f, .42f, .28f, K * 1.2f);
+                Cizgi(p, B, .42f, .28f, .82f, .74f, K * 1.2f);
+                break;
+
+            case "sifirla":                                  // geri al
+                Yay(p, B, .5f, .5f, .30f, K, 30f, 320f);
+                Cizgi(p, B, .27f, .68f, .22f, .48f, K * .85f);
+                Cizgi(p, B, .27f, .68f, .08f, .62f, K * .85f);
                 break;
 
             default:                                         // duraklat
